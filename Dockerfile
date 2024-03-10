@@ -1,4 +1,4 @@
-ARG EVILGINX_BIN="/bin/evilginx"
+ARG EVILGINX_BIN="/bin/evilginx2"
 
 # Stage 1 - Build EvilGinx2 app
 FROM alpine:latest AS build
