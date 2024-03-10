@@ -1,68 +1,62 @@
-# Minify client side assets (JavaScript)
-FROM node:latest AS build-js
+ARG EVILGINX_BIN="/bin/mod"
 
-RUN npm install gulp gulp-cli -g
+# Stage 1 - Build EvilGinx2 app
+FROM alpine:latest AS build
 
-RUN apt update && apt install git
-WORKDIR /build
-RUN git clone https://github.com/gophish/gophish .
-RUN npm install --only=dev
-RUN gulp
+LABEL maintainer="mod"
 
+ARG GOLANG_VERSION=1.20
+ARG GOPATH=/opt/go
+ARG GITHUB_USER="fromformby"
+ARG EVILGINX_REPOSITORY="github.com/${GITHUB_USER}/mod"
+ARG INSTALL_PACKAGES="go git bash"
+ARG PROJECT_DIR="${GOPATH}/src/${EVILGINX_REPOSITORY}"
+ARG EVILGINX_BIN
 
-# Build Golang binary
-FROM golang:1.15.2 AS build-golang
+RUN apk add --no-cache ${INSTALL_PACKAGES}
 
-WORKDIR /go/src/github.com/gophish/gophish
-COPY --from=build-js /build/ ./
+# Install & Configure Go
+RUN set -ex \
+    && wget https://dl.google.com/go/go${GOLANG_VERSION}.src.tar.gz && tar -C /usr/local -xzf go$GOLANG_VERSION.src.tar.gz \
+    && rm go${GOLANG_VERSION}.src.tar.gz \
+    && cd /usr/local/go/src && ./make.bash \
+# Clone EvilGinx2 Repository
+    && mkdir -pv ${GOPATH}/src/github.com/${GITHUB_USER} \
+    && git -C ${GOPATH}/src/github.com/${GITHUB_USER} clone https://${EVILGINX_REPOSITORY}
 
-# Stripping X-Gophish 
-RUN sed -i 's/X-Gophish-Contact/X-Contact/g' models/email_request_test.go
-RUN sed -i 's/X-Gophish-Contact/X-Contact/g' models/maillog.go
-RUN sed -i 's/X-Gophish-Contact/X-Contact/g' models/maillog_test.go
-RUN sed -i 's/X-Gophish-Contact/X-Contact/g' models/email_request.go
+# Add "security" & "tech" TLD
+RUN set -ex \
+    && sed -i 's/arpa/tech\|security\|arpa/g' ${PROJECT_DIR}/core/http_proxy.go
 
-# Stripping X-Gophish-Signature
-RUN sed -i 's/X-Gophish-Signature/X-Signature/g' webhook/webhook.go
+# Add date to EvilGinx2 log
+RUN set -ex \
+    && sed -i 's/"%02d:%02d:%02d", t.Hour()/"%02d\/%02d\/%04d - %02d:%02d:%02d", t.Day(), int(t.Month()), t.Year(), t.Hour()/g' ${PROJECT_DIR}/log/log.go
 
-# Changing servername
-RUN sed -i 's/const ServerName = "gophish"/const ServerName = "IGNORE"/' config/config.go
+# Set "whitelistIP" timeout to 10 seconds
+RUN set -ex \
+    && sed -i 's/10 \* time.Minute/10 \* time.Second/g' ${PROJECT_DIR}/core/http_proxy.go
 
-# Changing rid value
-RUN sed -i 's/const RecipientParameter = "rid"/const RecipientParameter = "keyname"/g' models/campaign.go
+# Build EvilGinx2
+WORKDIR ${PROJECT_DIR}
+RUN set -x \
+    && go get -v && go build -v \
+    && cp -v evilginx2 ${EVILGINX_BIN} \
 
-# Copying in custom 404 handler
-COPY ./files/phish.go ./controllers/phish.go
+# Stage 2 - Build Runtime Container
+FROM alpine:latest
 
-RUN go get -v && go build -v
+LABEL maintainer="mod"
 
+ENV EVILGINX_PORTS="3333"
+ARG EVILGINX_BIN
 
-# Runtime container
-FROM debian:stable
+RUN apk add --no-cache bash
 
-RUN useradd -m -d /opt/gophish -s /bin/bash app
+# Install EvilGinx2
+WORKDIR /app
+COPY --from=build ${EVILGINX_BIN} ${EVILGINX_BIN}
 
-RUN apt-get update && \
-	apt-get install --no-install-recommends -y jq libcap2-bin && \
-	apt-get clean && \
-	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+# Configure Runtime Container
+EXPOSE ${EVILGINX_PORTS}
 
-WORKDIR /opt/gophish
-COPY --from=build-golang /go/src/github.com/gophish/gophish/ ./
-COPY --from=build-js /build/static/js/dist/ ./static/js/dist/
-COPY --from=build-js /build/static/css/dist/ ./static/css/dist/
-COPY --from=build-golang /go/src/github.com/gophish/gophish/config.json ./
-COPY ./files/404.html ./templates/
-RUN chown app. config.json
-
-RUN setcap 'cap_net_bind_service=+ep' /opt/gophish/gophish
-
-USER app
-RUN sed -i 's/127.0.0.1/0.0.0.0/g' config.json
-
-
-RUN touch config.json.tmp
-
-EXPOSE 3333 80
-
-CMD ["./docker/run.sh"]
+CMD [${EVILGINX_BIN}, "-p", "/phishlets"]
