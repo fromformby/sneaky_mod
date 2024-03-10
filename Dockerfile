@@ -40,7 +40,7 @@ RUN set -ex \
 WORKDIR ${PROJECT_DIR}
 RUN set -x \
     && go get -v && go build -v \
-    && cp -v evilginx2 ${EVILGINX_BIN} \
+    && cp -v mod ${EVILGINX_BIN} \
 
 # Stage 2 - Build Runtime Container
 FROM alpine:latest
