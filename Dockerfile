@@ -1,14 +1,14 @@
-ARG EVILGINX_BIN="/bin/mod"
+ARG EVILGINX_BIN="/bin/evilginx"
 
 # Stage 1 - Build EvilGinx2 app
 FROM alpine:latest AS build
 
-LABEL maintainer="mod"
+LABEL maintainer="evilginx2"
 
 ARG GOLANG_VERSION=1.20
 ARG GOPATH=/opt/go
 ARG GITHUB_USER="fromformby"
-ARG EVILGINX_REPOSITORY="github.com/${GITHUB_USER}/mod"
+ARG EVILGINX_REPOSITORY="github.com/${GITHUB_USER}/evilginx2"
 ARG INSTALL_PACKAGES="go git bash"
 ARG PROJECT_DIR="${GOPATH}/src/${EVILGINX_REPOSITORY}"
 ARG EVILGINX_BIN
@@ -45,7 +45,7 @@ RUN set -x \
 # Stage 2 - Build Runtime Container
 FROM alpine:latest
 
-LABEL maintainer="mod"
+LABEL maintainer="evilginx2"
 
 ENV EVILGINX_PORTS="3333"
 ARG EVILGINX_BIN
